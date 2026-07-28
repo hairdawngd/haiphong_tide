@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Setup Haiphong Tide",
+        "description": "Configure the Haiphong Tide integration. Target location: {location}."
+      }
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "single_instance_allowed": "Only a single instance of Haiphong Tide is allowed"
+    }
+  }
+}

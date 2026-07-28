@@ -1,0 +1,13 @@
+{
+  "domain": "haiphong_tide",
+  "name": "Haiphong Tide",
+  "codeowners": ["@hairdawngd"],
+  "config_flow": true,
+  "documentation": "https://github.com/hairdawngd/haiphong_tide",
+  "issue_tracker": "https://github.com/hairdawngd/haiphong_tide/issues",
+  "requirements": ["beautifulsoup4", "requests"],
+  "version": "1.0.0",
+  "homeassistant": "2024.1.0",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling"
+}

@@ -1,0 +1,14 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Cài đặt Thuỷ triều Hải Phòng",
+        "description": "Cấu hình tự động theo dõi thuỷ triều. Vị trí: {location}."
+      }
+    },
+    "abort": {
+      "already_configured": "Thiết bị đã được cấu hình từ trước",
+      "single_instance_allowed": "Chỉ được phép cài đặt một bản Thuỷ triều Hải Phòng duy nhất"
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Setup Haiphong Tide",
+        "description": "Configure the Haiphong Tide integration"
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Only a single instance is allowed"
+    }
+  }
+}
