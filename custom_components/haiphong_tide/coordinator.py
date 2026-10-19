@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DOMAIN, HAIPHONG_TIDE_URL, LOCATION_NAME, SCAN_INTERVAL, TIDE_HIGH, TIDE_LOW
+from .const import DOMAIN, HAIPHONG_TIDE_URL, LOCATION_NAME, SCAN_INTERVAL, TIDE_HIGH, TIDE_LOW, TIDE_TIMEZONE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,12 +38,12 @@ class HaiphongTideCoordinator(DataUpdateCoordinator):
         """Fetch data from tide-forecast.com."""
         try:
             response = await self.hass.async_add_executor_job(
-                requests.get, HAIPHONG_TIDE_URL, {"timeout": 15}
+                requests.get,
+                HAIPHONG_TIDE_URL,
+                {"timeout": 15, "headers": {"User-Agent": "Home Assistant haiphong_tide"}},
             )
             response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
-            # DEBUG: Save/print raw HTML content for troubleshooting
-            _LOGGER.warning("HaiphongTide: Response HTML trunc: %s", response.content[:500])
             tides = self._parse_tide_table(soup)
             _LOGGER.warning("HaiphongTide: Parsed tides: %s", tides)
             if not tides:
@@ -58,7 +58,7 @@ class HaiphongTideCoordinator(DataUpdateCoordinator):
         # Build output
         points = self._parse_points(tides)
         tide_points = self._build_tide_points(tides)
-        now = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).replace(second=0, microsecond=0)
+        now = datetime.now(ZoneInfo(TIDE_TIMEZONE)).replace(second=0, microsecond=0)
         start_full = points[0]["dt"] if points else now
         end_full = points[-1]["dt"] if points else now
 
@@ -71,80 +71,35 @@ class HaiphongTideCoordinator(DataUpdateCoordinator):
         }
 
     def _parse_tide_table(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
-        """Parse tide data from tide-forecast.com HTML."""
+        """Parse hourly Hòn Dấu data from thegioimoicau.com."""
+        import re
+
+        text = soup.get_text(" ", strip=True)
+        pattern = re.compile(
+            r"Dương lịch\s+(\d{1,2}/\d{1,2}/\d{4}).*?"
+            r"Thời gian \(h là giờ\)(.*?)(?=Mực nước|TheGioiMoiCau\.Com)",
+            re.DOTALL,
+        )
         tides = []
-
-        container = soup.find("div", class_="tide-table")
-        if not container:
-            _LOGGER.error("tide-table container not found")
-            return tides
-
-        table = container.find("table", class_="tide-table__table")
-        if not table:
-            _LOGGER.error("tide-table__table not found")
-            return tides
-
-        # In newer HTML, rows might be directly under table or inside tbody
-        tbody = table.find("tbody")
-        rows = tbody.find_all("tr", recursive=False) if tbody else table.find_all("tr", recursive=False)
-
-        # Row 0: day headers with date
-        day_headers = rows[0].find_all("th", class_="tide-table__day") if len(rows) > 0 else []
-        dates = [th.get("data-date", "") for th in day_headers]
-
-        high_row = None
-        low_row = None
-        for row in rows:
-            if row.find("td", class_=lambda c: c and "tide-table__part--high" in c and "tide-table__part--last" in c):
-                high_row = row
-            if row.find("td", class_=lambda c: c and "tide-table__part--low" in c and "tide-table__part--last" in c):
-                low_row = row
-
-        if not high_row and not low_row:
-            return tides
-
-        high_cells = high_row.find_all("td", class_="tide-table__part--last") if high_row else []
-        low_cells = low_row.find_all("td", class_="tide-table__part--last") if low_row else []
-
-        for i, date_str in enumerate(dates):
-            if not date_str:
-                continue
-
-            # Parse high tides for this day
-            if i < len(high_cells):
-                for entry in self._parse_tide_entries(high_cells[i], TIDE_HIGH, date_str):
-                    tides.append(entry)
-
-            # Parse low tides for this day
-            if i < len(low_cells):
-                for entry in self._parse_tide_entries(low_cells[i], TIDE_LOW, date_str):
-                    tides.append(entry)
-
+        for date_text, values in pattern.findall(text):
+            date_obj = datetime.strptime(date_text, "%d/%m/%Y")
+            pairs = re.findall(r"(\d{1,2})h\s+([0-9]+(?:[.,][0-9]+)?)m", values)
+            if len(pairs) != 24:
+                _LOGGER.warning("Expected 24 hourly values for %s, got %s", date_text, len(pairs))
+            day = [{
+                "date": date_obj.strftime("%Y-%m-%d"),
+                "time": f"{int(hour):02d}:00",
+                "hour": int(hour),
+                "height": float(height.replace(",", ".")),
+                "tide_type": "hourly",
+                "description": f"Hòn Dấu {date_text} {int(hour):02d}:00",
+            } for hour, height in pairs]
+            for i, tide in enumerate(day):
+                before = day[i - 1]["height"] if i else tide["height"]
+                after = day[i + 1]["height"] if i + 1 < len(day) else tide["height"]
+                tide["tide_type"] = TIDE_HIGH if tide["height"] >= before and tide["height"] >= after else TIDE_LOW if tide["height"] <= before and tide["height"] <= after else "hourly"
+            tides.extend(day)
         return tides
-
-    def _parse_tide_entries(self, cell, tide_type: str, date_str: str) -> List[Dict[str, Any]]:
-        """Parse one or more tide entries from a table cell."""
-        entries = []
-        tide_divs = cell.find_all("div", class_="tide-time")
-        for div in tide_divs:
-            time_span = div.find("span", class_=lambda c: c and "tide-time__time" in c)
-            height_span = div.find("span", class_="tide-time__height")
-            if not time_span or not height_span:
-                continue
-            time_text = time_span.get_text(strip=True)
-            height_text = height_span.get_text(strip=True)
-            try:
-                height = float(height_text)
-            except ValueError:
-                height = 0.0
-            entries.append({
-                "date": date_str,
-                "time": time_text,
-                "height": height,
-                "tide_type": tide_type,
-                "description": f"{tide_type.capitalize()} tide at {time_text} - {height}m",
-            })
-        return entries
 
     def get_current_tide(self) -> Optional[Dict[str, Any]]:
         """Get the most recent tide before or at current time."""

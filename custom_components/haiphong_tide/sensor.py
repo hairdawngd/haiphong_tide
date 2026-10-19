@@ -198,8 +198,8 @@ class HaiphongTideCurrentLevelSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(self, coordinator: HaiphongTideCoordinator) -> None:
         super().__init__(coordinator)
-        self._attr_name = "Current Tide Level"
-        self._attr_unique_id = f"{DOMAIN}_current_level"
+        self._attr_name = "Current Tide Level (Hourly)"
+        self._attr_unique_id = f"{DOMAIN}_current_level_hourly"
         self._attr_icon = "mdi:waves"
         self._attr_native_unit_of_measurement = "m"
 
