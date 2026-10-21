@@ -1,4 +1,4 @@
-# Haiphong Home Assistant Add-ons
+# Home Assistant Add-ons
 
 Kho add-on cho Home Assistant, hiện có:
 
