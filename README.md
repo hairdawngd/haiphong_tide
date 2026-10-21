@@ -1,73 +1,39 @@
-# Haiphong Tide Integration
+# Haiphong Home Assistant Add-ons
 
-[![Open Home Assistant and install with HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=hairdawngd&repository=haiphong_tide)
+Kho add-on cho Home Assistant, hiện có:
 
-## 🌊 Nguồn dữ liệu / Data Source
+- **Haiphong Tide** — dữ liệu thủy triều Hòn Dấu, Hải Phòng.
+- **Vietlott Tracker** — theo dõi kết quả và dự đoán Vietlott.
 
-- Crawl bảng thủy triều Hải Phòng: [tide-forecast.com](https://tide-forecast.com/locations/Haiphong-Vietnam/tides/latest)
+## Thêm kho vào Home Assistant
 
-## 🚀 Cài đặt nhanh với HACS (khuyên dùng)
+1. Mở **Cài đặt → Add-ons → Add-on Store**.
+2. Mở menu **⋮ → Repositories**.
+3. Thêm `https://github.com/hairdawngd/hass_addon`.
+4. Chọn add-on cần cài trong cửa hàng, cài đặt và cấu hình trước khi khởi động.
 
-1. Nhấn badge đầu README hoặc HACS > Integrations > Custom repositories.
-2. Dán repo: `https://github.com/hairdawngd/haiphong_tide` (loại Integration).
-3. Search Haiphong Tide, cài đặt, restart Home Assistant.
-4. Settings → Devices & Services → Add Integration → tìm "Haiphong Tide".
+## Haiphong Tide
 
-## 🛠️ Cài thủ công
+Add-on tải bảng thủy triều Hòn Dấu từ
+[thegioimoicau.com](https://thegioimoicau.com/dia-danh/hon-dau/trang-1) mỗi giờ
+(có thể chỉnh chu kỳ trong cấu hình). Add-on dùng Home Assistant API để tạo/cập nhật
+các sensor:
 
-1. Copy folder `custom_components/haiphong_tide` vào `config/custom_components/` của Home Assistant.
-2. Restart HA, Add Integration như bình thường.
+- `sensor.haiphong_tide_current` — mốc dữ liệu thủy triều hiện tại.
+- `sensor.haiphong_tide_next` — mốc dữ liệu kế tiếp.
+- `sensor.haiphong_tide_today_low` / `sensor.haiphong_tide_today_high`.
+- `sensor.haiphong_tide_current_level_hourly` — mực nước nội suy theo giờ.
+- `sensor.haiphong_tide_schedule` — lịch và các điểm đường cong thủy triều.
 
-## ✅ Tính năng / Features
+Yêu cầu kiến trúc `amd64` hoặc `aarch64` và quyền Home Assistant API được bật trong
+cấu hình add-on.
 
-- Lấy/và cập nhật tự động dữ liệu thủy triều Đồ Sơn (1 tiếng/lần).
-- Sinh ra sensor:
-    - `sensor.haiphong_tide_current` — Mực nước hiện tại.
-    - `sensor.haiphong_tide_next` — Lần triều tiếp theo.
-    - `sensor.haiphong_tide_today_low` — Triều thấp nhất hôm nay.
-    - `sensor.haiphong_tide_today_high` — Triều cao nhất hôm nay.
-    - `sensor.haiphong_tide_schedule` — Toàn bộ bảng thủy triều hôm nay.
-- Đầy đủ thuộc tính: thời gian - chiều cao - loại triều.
+## Vietlott Tracker
 
-## 💡 Ví dụ sử dụng / Usage Example
+Xem hướng dẫn, cấu hình, các sensor và lưu ý xác suất trong
+[vietlott/DOCS.md](./vietlott/DOCS.md). Add-on hỗ trợ `amd64` và `aarch64`.
 
-**Tự động cảnh báo khi triều cao hơn X m:**
-```yaml
-automation:
-  - alias: High Tide Alert
-    trigger:
-      - platform: numeric_state
-        entity_id: sensor.haiphong_tide_today_high
-        above: 3.5
-    action:
-      - service: notify.notify
-        data:
-          message: "Hôm nay triều cao nhất đạt {{ states('sensor.haiphong_tide_today_high') }} mét"
-```
+## Phát triển
 
-**Tạo sensor đếm giờ đến lần triều tiếp theo:**
-```yaml
-template:
-  - sensor:
-      - name: "Giờ tới triều kế"  # Hours until next tide
-        unit_of_measurement: "h"
-        state: >
-          {% set t = state_attr('sensor.haiphong_tide_next', 'time') %}
-          {% if t %}
-            {{ ((as_timestamp(t) - now().timestamp()) / 3600) | round(1) }}
-          {% else %}unknown{% endif %}
-```
-
-## 📝 FAQ
-
-- Không thấy Sensor: Kiểm tra log, đảm bảo Home Assistant truy cập Internet, đúng repo, đã restart.
-- Dữ liệu không cập nhật: Nguồn web có thể thay đổi, check lại sau, hoặc reload integration.
-- "Add Integration" không có: Kiểm tra URL repo, repo phải public, xóa cache HACS nếu cần.
-
-## 📢 Liên hệ - Góp ý
-
-- Mở issue trực tiếp trên [GitHub](https://github.com/hairdawngd/haiphong_tide).
-
-## 🪪 Giấy phép
-
-Free, phi lợi nhuận, open source.
+Mỗi thư mục add-on có `config.yaml`, `Dockerfile` và `build.yaml`. Tăng trường
+`version` trong `config.yaml` của add-on tương ứng khi phát hành bản mới.

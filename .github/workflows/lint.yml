@@ -1,4 +1,4 @@
-name: Lint and Test
+name: Validate Add-on Repository
 
 on:
   push:
@@ -9,60 +9,28 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install flake8 pytest beautifulsoup4 requests
-    
-    - name: Lint with flake8
-      run: |
-        # Stop the build if there are Python syntax errors or undefined names
-        flake8 custom_components/haiphong_tide --count --select=E9,F63,F7,F82 --show-source --statistics
-        # Exit-zero treats all errors as warnings
-        flake8 custom_components/haiphong_tide --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    
-    - name: Run tests
-      run: |
-        pytest tests/ -v || true
+    - uses: actions/checkout@v4
 
-  integration-test:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v3
-    
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.11'
-    
+        python-version: '3.12'
+
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install beautifulsoup4 requests
-    
-    - name: Validate manifest
+        pip install flake8 pytest pyyaml -r haiphong_tide/requirements.txt
+
+    - name: Validate repository and add-on configuration
       run: |
-        python -c "import json; json.load(open('custom_components/haiphong_tide/manifest.json'))"
-    
-    - name: Check required files
+        python -c "import yaml; repo=yaml.safe_load(open('repository.yaml', encoding='utf-8')); assert repo['name'] and repo['url'] and repo['maintainer']; addons=['haiphong_tide','vietlott']; [yaml.safe_load(open(f'{addon}/config.yaml', encoding='utf-8')) for addon in addons]"
+
+    - name: Lint Haiphong Tide add-on
       run: |
-        [ -f "custom_components/haiphong_tide/__init__.py" ] && echo "✓ __init__.py found"
-        [ -f "custom_components/haiphong_tide/manifest.json" ] && echo "✓ manifest.json found"
-        [ -f "custom_components/haiphong_tide/const.py" ] && echo "✓ const.py found"
-        [ -f "custom_components/haiphong_tide/coordinator.py" ] && echo "✓ coordinator.py found"
-        [ -f "custom_components/haiphong_tide/sensor.py" ] && echo "✓ sensor.py found"
-        [ -f "custom_components/haiphong_tide/config_flow.py" ] && echo "✓ config_flow.py found"
-        [ -f "custom_components/haiphong_tide/strings.json" ] && echo "✓ strings.json found"
+        flake8 haiphong_tide/service.py haiphong_tide/tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 haiphong_tide/service.py haiphong_tide/tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+    - name: Run tests
+      run: pytest haiphong_tide/tests -v

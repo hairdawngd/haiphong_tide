@@ -1,5 +1,4 @@
 name: Release
-
 on:
   push:
     tags:
@@ -20,10 +19,7 @@ jobs:
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref }}
         body: |
-          See CHANGELOG.md for details
+          Home Assistant add-on repository release.
+          See the add-on directory's config.yaml for the released version.
         draft: false
         prerelease: false
-    
-    - name: Publish to HACS
-      run: |
-        echo "Release published. Update HACS if needed."

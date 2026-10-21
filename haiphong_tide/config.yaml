@@ -1,0 +1,16 @@
+name: Haiphong Tide
+version: "1.0.0"
+slug: haiphong_tide
+description: Theo dõi mực nước và lịch thủy triều Hòn Dấu, Hải Phòng
+url: https://github.com/hairdawngd/hass_addon
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+homeassistant_api: true
+options:
+  poll_minutes: 60
+schema:
+  poll_minutes: "int(5,240)"
