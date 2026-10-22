@@ -62,7 +62,7 @@ def render():
             + "".join(o) + "</body></html>")
 
 
-def start(port=8098):
+def start(port):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             try:

@@ -1,10 +1,11 @@
 """Dịch vụ chạy nền: định kỳ lấy dữ liệu, học, đối chiếu, thông báo."""
 import json
 import logging
-import os
 import signal
 import threading
 from pathlib import Path
+
+import yaml
 
 from . import data, engine, web
 from .ha import HA
@@ -22,6 +23,16 @@ def load_options(path="/data/options.json"):
     except (OSError, json.JSONDecodeError):
         log.warning("Không đọc được %s, dùng cấu hình mặc định.", path)
     return opts
+
+
+def load_ingress_port(path="/app/config.yaml"):
+    config = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError(f"Cấu hình add-on không hợp lệ: {path}")
+    port = config.get("ingress_port")
+    if isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535:
+        raise ValueError(f"ingress_port không hợp lệ trong {path}: {port!r}")
+    return port
 
 
 def _n2(a):
@@ -117,7 +128,8 @@ def main():
     opts = load_options()
     log.info("Cấu hình: %s", opts)
     ha = HA()
-    web.start(int(os.environ.get("INGRESS_PORT", "8098")))
+    ingress_port = load_ingress_port()
+    web.start(ingress_port)
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())

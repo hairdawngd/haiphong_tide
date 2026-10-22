@@ -6,6 +6,7 @@ ENV PYTHONUNBUFFERED=1 \
     XSMB_HOME=/data
 
 WORKDIR /app
+COPY config.yaml /app/config.yaml
 COPY requirements.txt .
 RUN python -m pip install -r requirements.txt
 COPY src /app/src

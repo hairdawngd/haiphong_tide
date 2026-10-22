@@ -47,6 +47,9 @@ Hỗ trợ `amd64` và `aarch64`. Lần khởi động đầu mất vài giây �
 | `notify_persistent` | true | Thông báo trong Home Assistant |
 | `notify_service` | rỗng | Dịch vụ notify bổ sung, ví dụ `mobile_app_iphone_cua_ban` |
 
+Cổng Ingress được khai báo tại `ingress_port` trong `config.yaml`; service đọc cùng giá trị đó
+để mở trang web, nên khi đổi cổng chỉ cần sửa trường này.
+
 ## Thực thể và sự kiện
 
 - `sensor.xsmb_last_result`: ngày kỳ mới nhất; thuộc tính `special`, `first`, `prizes`, `loto`
