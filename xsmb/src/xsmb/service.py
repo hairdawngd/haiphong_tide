@@ -117,7 +117,7 @@ def main():
     opts = load_options()
     log.info("Cấu hình: %s", opts)
     ha = HA()
-    web.start(int(os.environ.get("INGRESS_PORT", "8099")))
+    web.start(int(os.environ.get("INGRESS_PORT", "8098")))
     stop = threading.Event()
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: stop.set())
