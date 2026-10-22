@@ -21,11 +21,11 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install flake8 pytest pyyaml -r haiphong_tide/requirements.txt -r vietlott/requirements.txt
+        pip install flake8 pytest pyyaml -r haiphong_tide/requirements.txt -r vietlott/requirements.txt -r xsmb/requirements.txt
 
-    - name: Check Vietlott NumPy runtime
+    - name: Check NumPy runtime
       run: |
-        python -c "import numpy; version = tuple(map(int, numpy.__version__.split('.')[:2])); assert version < (2, 3), numpy.__version__; print(f'Veitlott NumPy: {numpy.__version__}')"
+        python -c "import numpy; version = tuple(map(int, numpy.__version__.split('.')[:2])); assert version < (2, 3), numpy.__version__; print(f'NumPy: {numpy.__version__}')"
 
     - name: Validate repository and add-on configuration
       run: |
