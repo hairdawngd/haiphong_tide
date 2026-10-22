@@ -29,6 +29,8 @@ bộ khi có kỳ mới.
 3. Chỉnh cấu hình, bấm **Start**. Bật *Hiển thị trên thanh bên* để mở trang Vietlott.
 
 Hỗ trợ kiến trúc `amd64` và `aarch64` (Raspberry Pi 4/5 bản 64-bit, HA Green/Yellow/Blue).
+Phiên bản NumPy được giới hạn dưới 2.3 để tương thích với các CPU amd64 không hỗ trợ
+tập lệnh x86-64-v2.
 
 ## Cấu hình
 
