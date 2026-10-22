@@ -1,0 +1,27 @@
+name: XSMB Tracker
+version: "0.1.0"
+slug: xsmb_tracker
+description: Tự lấy kết quả xổ số miền Bắc, tự học, dự đoán số 2 chữ số và thông báo kết quả đối chiếu
+arch:
+  - aarch64
+  - amd64
+init: false
+startup: services
+boot: auto
+homeassistant_api: true
+ingress: true
+ingress_port: 8098
+panel_icon: mdi:numeric
+panel_title: XSMB
+options:
+  poll_minutes: 30
+  loto_per_draw: 5
+  special_per_draw: 3
+  notify_persistent: true
+  notify_service: ""
+schema:
+  poll_minutes: "int(5,240)"
+  loto_per_draw: "int(1,30)"
+  special_per_draw: "int(1,10)"
+  notify_persistent: bool
+  notify_service: "str?"
