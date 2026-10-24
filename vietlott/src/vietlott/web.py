@@ -26,6 +26,33 @@ def _game_section(game):
     else:
         out.append("<p>Chưa có dự đoán (đang khởi tạo).</p>")
 
+    training = lg.get("training")
+    training_status = (
+        "train lại toàn bộ"
+        if training and training["full_retrain_this_cycle"]
+        else "học tiếp"
+    )
+    out.append("<h3>Huấn luyện</h3>")
+    if training:
+        out.append(
+            f"<p>Đã học {training['processed_draws']} kỳ · lịch sử "
+            f"{html.escape(training['first_draw'])}–{html.escape(training['last_draw'])} · "
+            f"học lại gần nhất {html.escape(training['last_full_retrain'])} · "
+            f"· cập nhật gần nhất: {training_status}"
+            f" · {training['scored_draws']} kỳ được chấm, warm-up {training['warmup_draws']} kỳ</p>"
+        )
+        losses = " · ".join(
+            f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
+            for name, value in training["expert_log_loss"].items()
+        )
+        weights = " · ".join(
+            f"{html.escape(name)}: {value:.4f}"
+            for name, value in training["expert_weights"].items()
+        )
+        out.append(f"<p>Log-loss bình quân: {losses}<br>Trọng số mô hình: {weights}</p>")
+    else:
+        out.append("<p>Chưa có dữ liệu huấn luyện.</p>")
+
     exp_rate = prizes.win_prob(game) * 100
     obs_rate = (st["wins"] / st["sets"] * 100) if st["sets"] else 0
     out.append("<h3>Bảng điểm tích lũy</h3>")
@@ -39,6 +66,25 @@ def _game_section(game):
         out.append(f"<tr><td>{name}</td><td>{st['tiers'].get(key, 0)}</td>"
                    f"<td>{probs[key] * st['sets']:.2f}</td><td>1/{1 / probs[key]:,.0f}</td></tr>".replace(",", "."))
     out.append("</table>")
+
+    out.append("<h3>Đối chiếu dự đoán kỳ gần nhất</h3>")
+    if hist:
+        ev = hist[-1]
+        bonus = f" + {_nums([ev['bonus']])}" if ev.get("bonus") else ""
+        out.append(
+            f"<p>Kỳ {html.escape(ev['draw_id'])} · {html.escape(ev['date'])} · "
+            f"Kết quả: <code>{_nums(ev['numbers'])}</code>{bonus}</p><ul>"
+        )
+        for i, s in enumerate(ev["sets"], 1):
+            tier = prizes.tier_name(game, s["tier"]) if s["tier"] else "không trúng"
+            prize = f" · {prizes.vnd(s['prize'])}" if s["prize"] else ""
+            out.append(
+                f"<li>Bộ {i} <code>{_nums(s['numbers'])}</code> → trùng {s['matches']} số"
+                f"{' + số phụ' if s['bonus_hit'] else ''} · {tier}{prize}</li>"
+            )
+        out.append("</ul>")
+    else:
+        out.append("<p>Chưa có kỳ nào được đối chiếu.</p>")
 
     out.append("<h3>Các kỳ gần đây</h3>")
     if not hist:
@@ -64,6 +110,8 @@ h1{font-size:20px}h2{margin-top:28px;border-bottom:1px solid var(--line);padding
 code{font-family:ui-monospace,monospace;background:rgba(127,127,127,.15);padding:1px 6px;border-radius:4px}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--line);padding:4px 8px;text-align:left}
 .win{color:var(--win);font-weight:600}.note{color:var(--mut);font-size:13px}.draw{margin:10px 0}
+button{padding:8px 12px;border:0;border-radius:6px;background:#2563eb;color:#fff;font:inherit;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}#train-status{margin-left:8px;color:var(--mut)}
 """
 
 
@@ -81,11 +129,22 @@ def render(games):
         "<p class='note'>Mỗi kỳ quay độc lập; mọi bộ số có xác suất trúng bằng nhau. "
         f"Jackpot Power 6/55: 1/{_odds('power655')} · Mega 6/45: 1/{_odds('mega645')}. "
         "Các bộ số ở đây là thử nghiệm thống kê, không làm tăng cơ hội trúng.</p>"
-        f"{body}</body></html>"
+        "<form action='train' method='post' id='train-form'>"
+        "<button type='submit'>Huấn luyện lại toàn bộ</button>"
+        "<span id='train-status' role='status'></span></form>"
+        f"{body}<script>"
+        "document.getElementById('train-form').addEventListener('submit',async function(e){"
+        "e.preventDefault();const b=this.querySelector('button'),s=document.getElementById('train-status');"
+        "b.disabled=true;s.textContent='Đang gửi yêu cầu...';"
+        "try{const r=await fetch(this.action,{method:'POST'});"
+        "if(!r.ok)throw new Error(await r.text());"
+        "s.textContent='Đã xếp hàng huấn luyện lại; trang sẽ tự cập nhật.';"
+        "}catch(err){s.textContent='Không gửi được yêu cầu: '+err.message;b.disabled=false;}});"
+        "</script></body></html>"
     )
 
 
-def start(games, port=8099):
+def start(games, port=8099, on_train=None):
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             try:
@@ -99,6 +158,21 @@ def start(games, port=8099):
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
+
+        def do_POST(self):
+            if self.path.split("?", 1)[0] != "/train":
+                self.send_error(404)
+                return
+            if on_train is None:
+                self.send_error(503, "Huấn luyện thủ công chưa khả dụng")
+                return
+            on_train()
+            body = "Đã nhận yêu cầu huấn luyện lại.".encode("utf-8")
+            self.send_response(202)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def log_message(self, *a):
             pass

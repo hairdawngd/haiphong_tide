@@ -4,6 +4,9 @@ Kho add-on cho Home Assistant, hiện có:
 
 - **Haiphong Tide** — dữ liệu thủy triều Hòn Dấu, Hải Phòng.
 - **Vietlott Tracker** — theo dõi kết quả và dự đoán Vietlott.
+- **XSMB Tracker** — theo dõi kết quả xổ số miền Bắc và đối chiếu dự đoán.
+
+Lịch sử thay đổi và phiên bản add-on: [CHANGELOG.md](./CHANGELOG.md).
 
 ## Thêm kho vào Home Assistant
 
@@ -33,7 +36,13 @@ cấu hình add-on.
 Xem hướng dẫn, cấu hình, các sensor và lưu ý xác suất trong
 [vietlott/DOCS.md](./vietlott/DOCS.md). Add-on hỗ trợ `amd64` và `aarch64`.
 
+## XSMB Tracker
+
+Xem hướng dẫn, cấu hình, sensor và lưu ý thống kê trong
+[xsmb/DOCS.md](./xsmb/DOCS.md). Add-on hỗ trợ `amd64` và `aarch64`.
+
 ## Phát triển
 
-Mỗi thư mục add-on có `config.yaml`, `Dockerfile` và `build.yaml`. Tăng trường
-`version` trong `config.yaml` của add-on tương ứng khi phát hành bản mới.
+Mỗi thư mục add-on có `config.yaml`, `Dockerfile` và `requirements.txt`. Khi phát
+hành phiên bản add-on mới, cập nhật cả trường `version` trong `config.yaml` và
+`__version__` trong package Python tương ứng.

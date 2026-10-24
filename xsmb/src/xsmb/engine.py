@@ -2,6 +2,7 @@
 import json
 import os
 from collections import Counter
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -72,27 +73,67 @@ def _top(p, k):
     return sorted(int(i) for i in np.argsort(-p)[:k])
 
 
-def update(rows, loto_count, special_count):
+def _training_info(models, rows, training_date, full_retrain):
+    experts = {}
+    weights = {}
+    for prefix, model in models.items():
+        scored = model.scored
+        experts[prefix] = {
+            name: round(loss / scored, 6) if scored else None
+            for name, loss in model.cum.items()
+        }
+        weights[prefix] = {
+            name: round(float(weight), 6)
+            for name, weight in zip(model.names, model.weights())
+        }
+    return {
+        "last_full_retrain": training_date,
+        "full_retrain_this_cycle": full_retrain,
+        "processed_draws": min(model.processed for model in models.values()),
+        "scored_draws": min(model.scored for model in models.values()),
+        "warmup_draws": min(model.processed - model.scored for model in models.values()),
+        "first_draw": rows[0]["date"],
+        "last_draw": rows[-1]["date"],
+        "expert_log_loss": experts,
+        "expert_weights": weights,
+    }
+
+
+def update(rows, loto_count, special_count, force_retrain=False):
     h = home()
     N = len(rows)
     ids = [r["id"] for r in rows]
     lo_saved, sp_saved = _read(h / "loto_model.json", None), _read(h / "special_model.json", None)
     first_run = lo_saved is None or sp_saved is None
-    m_lo = OnlineModel.from_dict(lo_saved) if lo_saved else OnlineModel(N_NUMBERS, P_LOTO)
-    m_sp = OnlineModel.from_dict(sp_saved) if sp_saved else OnlineModel(N_NUMBERS, P_SPECIAL)
-    if m_lo.processed > N or m_sp.processed > N:
-        m_lo, m_sp, first_run = OnlineModel(N_NUMBERS, P_LOTO), OnlineModel(N_NUMBERS, P_SPECIAL), True
+    training_date = date.today().isoformat()
+    full_retrain = (
+        force_retrain
+        or first_run
+        or lo_saved.get("trained_on") != training_date
+        or sp_saved.get("trained_on") != training_date
+        or lo_saved.get("processed", 0) > N
+        or sp_saved.get("processed", 0) > N
+    )
+    if full_retrain:
+        m_lo, m_sp = OnlineModel(N_NUMBERS, P_LOTO), OnlineModel(N_NUMBERS, P_SPECIAL)
+    else:
+        m_lo, m_sp = OnlineModel.from_dict(lo_saved), OnlineModel.from_dict(sp_saved)
 
     log = load_log()
     pend = log.get("pending")
 
     def result(events):
         return {"events": events, "first_run": first_run, "pending": log["pending"],
-                "stats": log["stats"], "latest": rows[-1]}
+                "stats": log["stats"], "latest": rows[-1], "history": log["history"],
+                "training": _training_info(
+                    {"loto": m_lo, "special": m_sp}, rows, training_date, full_retrain
+                )}
 
-    # không có kỳ mới -> không cần tính lại (tiết kiệm CPU trên thiết bị nhỏ)
-    if (not first_run and m_lo.processed == N and m_sp.processed == N
+    # Chỉ bỏ qua khi mô hình đã được học trong ngày và không có kỳ mới.
+    if (not full_retrain and m_lo.processed == N and m_sp.processed == N
             and pend and pend["after_id"] == ids[-1]):
+        log["training"] = result([])["training"]
+        _write(h / "log.json", log)
         return result([])
 
     events = []
@@ -110,10 +151,15 @@ def update(rows, loto_count, special_count):
         m_lo.step(X_lo[t], M_lo[t])
     for t in range(m_sp.processed, N):
         m_sp.step(X_sp[t], M_sp[t])
-    _write(h / "loto_model.json", m_lo.to_dict())
-    _write(h / "special_model.json", m_sp.to_dict())
+    lo_data, sp_data = m_lo.to_dict(), m_sp.to_dict()
+    lo_data["trained_on"] = sp_data["trained_on"] = training_date
+    _write(h / "loto_model.json", lo_data)
+    _write(h / "special_model.json", sp_data)
+    log["training"] = _training_info(
+        {"loto": m_lo, "special": m_sp}, rows, training_date, full_retrain
+    )
 
-    if not pend or pend["after_id"] != ids[-1] or events:
+    if full_retrain or not pend or pend["after_id"] != ids[-1] or events:
         nxt_lo = build_features(np.vstack([M_lo, np.zeros((1, N_NUMBERS))]))[-1]
         nxt_sp = build_features(np.vstack([M_sp, np.zeros((1, N_NUMBERS))]))[-1]
         p_lo, p_sp = m_lo.predict(nxt_lo), m_sp.predict(nxt_sp)

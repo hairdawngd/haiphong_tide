@@ -17,7 +17,10 @@ bộ khi có kỳ mới.
    nên thông báo đến muộn hơn kỳ quay chừng đó.
 2. Khi có kỳ mới: chấm điểm các bộ số đã dự đoán trước đó, học thêm kỳ mới, tạo dự đoán
    mới cho kỳ kế tiếp, gửi thông báo.
-3. Mô hình: học trực tuyến (EWMA + SGD logistic + Hedge tổ hợp). Bộ 1 là top-6 theo
+3. Mỗi ngày một lần, mô hình được khởi tạo lại và học tuần tự toàn bộ lịch sử từ kỳ đầu
+   đến kỳ mới nhất. Những lần kiểm tra tiếp theo trong ngày chỉ học thêm nếu có kỳ mới;
+   việc học lại không làm mất hoặc chấm lặp lịch sử dự đoán.
+4. Mô hình: học trực tuyến (EWMA + SGD logistic + Hedge tổ hợp). Bộ 1 là top-6 theo
    mô hình; các bộ còn lại lấy mẫu có trọng số theo xác suất mô hình.
 
 ## Cài đặt (add-on cục bộ)
@@ -51,6 +54,15 @@ Muốn nhận thông báo đẩy trên điện thoại, điền tên dịch vụ
 - `sensor.vietlott_power655_prediction`: bộ 1 dự đoán; thuộc tính `sets` (tất cả các bộ)
 - `sensor.vietlott_power655_scoreboard`: số lần trúng thưởng; thuộc tính `win_rate_pct`,
   `expected_win_rate_pct`, `tiers`, `fixed_prize_total_vnd`, `ticket_cost_vnd`
+- `sensor.vietlott_power655_training`: số kỳ đã học; thuộc tính `last_full_retrain`,
+  `training_from`, `training_through`, `scored_draws`, `expert_log_loss` và `expert_weights`
+- `sensor.vietlott_power655_yesterday_prediction`: chi tiết các bộ đã dự đoán và kết quả
+  đối chiếu của kỳ gần nhất; `is_yesterday` cho biết kỳ đó có đúng ngày hôm qua hay không
+- Trang Ingress cũng hiển thị trạng thái/metric huấn luyện và chi tiết đối chiếu dự đoán
+  gần nhất. Nút **Huấn luyện lại toàn bộ** sẽ xếp hàng train lại tất cả game đang bật.
+
+Các sensor tương ứng cũng được tạo cho `mega645`. Điểm log-loss chỉ tính trên phần kỳ
+được chấm sau giai đoạn khởi động (`warmup_draws`).
 
 Các thực thể được tạo qua API trạng thái nên sẽ biến mất khi Home Assistant khởi động lại,
 và add-on tạo lại chúng ở lần kiểm tra kế tiếp (tối đa `poll_minutes` phút).

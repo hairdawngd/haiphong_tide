@@ -3,6 +3,7 @@ import json
 import logging
 import signal
 import threading
+from datetime import date, timedelta
 from pathlib import Path
 
 import yaml
@@ -73,32 +74,106 @@ def result_message(ev, pending, st):
 
 
 def publish_sensors(ha, res):
-    latest, st, pend = res["latest"], res["stats"], res["pending"]
+    latest, st, pend, training = (
+        res["latest"], res["stats"], res["pending"], res["training"]
+    )
     p = latest["prizes"]
-    ha.set_state("sensor.xsmb_last_result", latest["id"], {
-        "friendly_name": "XSMB kết quả mới nhất", "icon": "mdi:ticket-confirmation",
-        "date": latest["date"], "special": p["ĐB"][0], "first": p["G1"][0],
-        "special_two_digits": latest["special"], "prizes": p, "loto": sorted(latest["loto"])})
+    ha.set_state(
+        "sensor.xsmb_last_result", latest["id"],
+        {
+            "friendly_name": "XSMB kết quả mới nhất",
+            "icon": "mdi:ticket-confirmation",
+            "date": latest["date"],
+            "special": p["ĐB"][0],
+            "first": p["G1"][0],
+            "special_two_digits": latest["special"],
+            "prizes": p, "loto": sorted(latest["loto"])
+        }
+    )
+    ha.set_state(
+        "sensor.xsmb_training", training["processed_draws"], {
+            "friendly_name": "XSMB tiến độ huấn luyện",
+            "icon": "mdi:brain",
+            "unit_of_measurement": "kỳ",
+            "last_full_retrain": training["last_full_retrain"],
+            "full_retrain_this_cycle": training["full_retrain_this_cycle"],
+            "training_from": training["first_draw"],
+            "training_through": training["last_draw"],
+            "scored_draws": training["scored_draws"],
+            "warmup_draws": training["warmup_draws"],
+            "expert_log_loss": training["expert_log_loss"],
+            "expert_weights": training["expert_weights"],
+        }
+    )
+    history = res["history"]
+    if history:
+        ev = history[-1]
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        ha.set_state(
+            "sensor.xsmb_yesterday_prediction", ev["date"], {
+                "friendly_name": "XSMB đối chiếu dự đoán hôm qua/kỳ gần nhất",
+                "icon": "mdi:clipboard-check",
+                "is_yesterday": ev["date"] == yesterday,
+                "draw_id": ev["draw_id"],
+                "draw_date": ev["date"],
+                "predicted_loto": ev["loto"],
+                "loto_details": ev["loto"],
+                "predicted_special_two_digits": [
+                    {
+                        "number": item["number"],
+                        "hit": item["hit"],
+                    }
+                    for item in ev["special"]
+                ],
+                "actual_special_two_digits": ev["special_two"],
+                "actual_prizes": ev["prizes"],
+                "loto_hits": sum(1 for item in ev["loto"] if item["times"]),
+                "special_hits": sum(1 for item in ev["special"] if item["hit"]),
+            }
+        )
     if pend:
-        ha.set_state("sensor.xsmb_prediction", f"loto {_n2(pend['loto'])} | ĐB {_n2(pend['special'])}", {
-            "friendly_name": "XSMB dự đoán kỳ tới", "icon": "mdi:crystal-ball",
-            "loto": pend["loto"], "special_two_digits": pend["special"], "after_draw": pend["after_id"],
-            "loto_probabilities": pend["loto_probs"], "special_probabilities": pend["special_probs"]})
+        ha.set_state(
+            "sensor.xsmb_prediction",
+            f"loto {_n2(pend['loto'])} | ĐB {_n2(pend['special'])}",
+            {
+                "friendly_name": "XSMB dự đoán kỳ tới",
+                "icon": "mdi:crystal-ball",
+                "loto": pend["loto"],
+                "special_two_digits": pend["special"],
+                "after_draw": pend["after_id"],
+                "loto_probabilities": pend["loto_probs"],
+                "special_probabilities": pend["special_probs"]
+            }
+        )
     lo, sp = rates(st)
-    ha.set_state("sensor.xsmb_scoreboard", st["loto_hits"], {
-        "friendly_name": "XSMB số loto trúng", "icon": "mdi:trophy", "unit_of_measurement": "lần",
-        "draws": st["draws"], "loto_picks": st["loto_picks"], "loto_rate_pct": round(lo, 2),
-        "loto_expected_pct": round(P_LOTO * 100, 2),
-        "loto_p_value": round(p_value(st["loto_hits"], st["loto_picks"], P_LOTO), 4),
-        "special_picks": st["special_picks"], "special_hits": st["special_hits"],
-        "special_rate_pct": round(sp, 2), "special_expected_pct": round(P_SPECIAL * 100, 2),
-        "special_p_value": round(p_value(st["special_hits"], st["special_picks"], P_SPECIAL), 4)})
+    ha.set_state(
+        "sensor.xsmb_scoreboard",
+        st["loto_hits"],
+        {
+            "friendly_name": "XSMB số loto trúng",
+            "icon": "mdi:trophy",
+            "unit_of_measurement": "lần",
+            "draws": st["draws"],
+            "loto_picks": st["loto_picks"],
+            "loto_rate_pct": round(lo, 2),
+            "loto_expected_pct": round(P_LOTO * 100, 2),
+            "loto_p_value": round(p_value(st["loto_hits"], st["loto_picks"], P_LOTO), 4),
+            "special_picks": st["special_picks"],
+            "special_hits": st["special_hits"],
+            "special_rate_pct": round(sp, 2),
+            "special_expected_pct": round(P_SPECIAL * 100, 2),
+            "special_p_value": round(p_value(st["special_hits"], st["special_picks"], P_SPECIAL), 4)
+        }
+    )
 
 
-def run_cycle(opts, ha, loader=data.load):
+def run_cycle(opts, ha, loader=data.load, force_retrain=False):
     try:
         rows = loader()
-        res = engine.update(rows, int(opts["loto_per_draw"]), int(opts["special_per_draw"]))
+        res = engine.update(
+            rows, int(opts["loto_per_draw"]), int(opts["special_per_draw"]),
+            force_retrain=force_retrain,
+        )
     except Exception:  # noqa: BLE001 - lỗi mạng không được làm sập vòng lặp
         log.exception("Lỗi khi xử lý XSMB")
         return
@@ -129,13 +204,29 @@ def main():
     log.info("Cấu hình: %s", opts)
     ha = HA()
     ingress_port = load_ingress_port()
-    web.start(ingress_port)
     stop = threading.Event()
+    train_requested = threading.Event()
+    web.start(ingress_port, on_train=train_requested.set)
+
+    def request_stop(*_):
+        stop.set()
+        train_requested.set()
+
     for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, lambda *_: stop.set())
+        signal.signal(sig, request_stop)
+
+    first_cycle = True
     while not stop.is_set():
-        run_cycle(opts, ha)
-        stop.wait(int(opts["poll_minutes"]) * 60)
+        force_retrain = False
+        if not first_cycle:
+            force_retrain = train_requested.wait(int(opts["poll_minutes"]) * 60)
+        if stop.is_set():
+            break
+        if force_retrain:
+            train_requested.clear()
+            log.info("Đã nhận yêu cầu huấn luyện lại thủ công.")
+        run_cycle(opts, ha, force_retrain=force_retrain)
+        first_cycle = False
     log.info("Đã dừng.")
 
 

@@ -28,6 +28,10 @@ Có hai mục tiêu, mỗi mục một mô hình học trực tuyến (EWMA + SG
 Mỗi kỳ add-on chọn `loto_per_draw` số loto và `special_per_draw` số cho giải ĐB có xác suất
 mô hình cao nhất. Thực tế các xác suất này chỉ chênh vài phần nghìn so với mức nền.
 
+Mỗi ngày một lần, cả hai mô hình được khởi tạo lại và học tuần tự từ kỳ lịch sử đầu tiên
+đến kỳ mới nhất. Trong cùng ngày, các chu kỳ kiểm tra tiếp theo chỉ học phần kỳ mới (nếu
+có); quá trình học lại không xóa hay chấm lặp lịch sử dự đoán.
+
 ## Cài đặt
 
 1. Chép thư mục `xsmb` vào cùng chỗ với các add-on khác trong repo (ngang hàng `vietlott/`).
@@ -55,8 +59,16 @@ Cổng Ingress được khai báo tại `ingress_port` trong `config.yaml`; serv
 - `sensor.xsmb_last_result`: ngày kỳ mới nhất; thuộc tính `special`, `first`, `prizes`, `loto`
 - `sensor.xsmb_prediction`: các số dự đoán cho kỳ tới
 - `sensor.xsmb_scoreboard`: số lần loto trúng; thuộc tính tỉ lệ thực tế, tỉ lệ lý thuyết và `*_p_value`
+- `sensor.xsmb_training`: số kỳ đã học; thuộc tính ngày học lại gần nhất, khoảng lịch sử,
+  số kỳ warm-up, log-loss và trọng số của các chuyên gia cho cả mô hình loto và giải ĐB
+- `sensor.xsmb_yesterday_prediction`: chi tiết từng số loto/ĐB đã dự đoán và kết quả thực
+  tế của kỳ gần nhất; `is_yesterday` cho biết kỳ đó có đúng ngày hôm qua hay không
 - Sự kiện `xsmb_new_result`: `date`, `special`, `first`, `special_two_digits`, `loto_hits`,
   `loto_picks`, `special_hit`
+
+Trang Ingress hiển thị trạng thái/metric huấn luyện và chi tiết đối chiếu của kỳ gần nhất.
+Nút **Huấn luyện lại toàn bộ** xếp hàng một lần train thủ công, được xử lý trong vòng lặp
+chính sau khi chu kỳ hiện tại kết thúc.
 
 Cảm biến được tạo qua API trạng thái nên biến mất khi Home Assistant khởi động lại và được
 tạo lại ở lần kiểm tra kế tiếp.

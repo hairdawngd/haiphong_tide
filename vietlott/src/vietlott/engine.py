@@ -1,6 +1,7 @@
 """Lõi: học kỳ mới, chấm điểm các bộ số đã dự đoán, tạo dự đoán cho kỳ tiếp theo."""
 import json
 import os
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -91,7 +92,29 @@ def make_sets(p_next, count, seed):
     return sets
 
 
-def update(game, rows, n, sets_per_draw):
+def _training_info(model, rows, training_date, full_retrain):
+    scored = model.scored
+    return {
+        "last_full_retrain": training_date,
+        "full_retrain_this_cycle": full_retrain,
+        "processed_draws": model.processed,
+        "scored_draws": scored,
+        "warmup_draws": model.processed - scored,
+        "first_draw": rows[0]["date"],
+        "last_draw": rows[-1]["date"],
+        "expert_log_loss": {
+            name: round(loss / scored, 6) if scored else None
+            for name, loss in model.cum.items()
+        },
+        "expert_weights": {
+            name: round(float(weight), 6)
+            for name, weight in zip(model.names, model.weights())
+        },
+        "top_six_hits": model.hits,
+    }
+
+
+def update(game, rows, n, sets_per_draw, force_retrain=False):
     """Học kỳ mới -> chấm điểm dự đoán cũ -> tạo dự đoán mới. Trả về dict kết quả."""
     mpath, lpath = _paths(game)
     N = len(rows)
@@ -100,7 +123,15 @@ def update(game, rows, n, sets_per_draw):
     X = build_features(M)
 
     saved = _read(mpath, None)
-    model = OnlineModel.from_dict(saved) if saved else OnlineModel(n)
+    training_date = date.today().isoformat()
+    full_retrain = (
+        force_retrain
+        or saved is None
+        or saved.get("trained_on") != training_date
+        or saved.get("n") != n
+        or saved.get("processed", 0) > N
+    )
+    model = OnlineModel(n) if full_retrain else OnlineModel.from_dict(saved)
     if model.n != n or model.processed > N:
         model = OnlineModel(n)
     first_run = saved is None
@@ -120,10 +151,14 @@ def update(game, rows, n, sets_per_draw):
 
     for t in range(model.processed, N):
         model.step(X[t], M[t])
-    _write(mpath, model.to_dict())
+    model_data = model.to_dict()
+    model_data["trained_on"] = training_date
+    _write(mpath, model_data)
+    training = _training_info(model, rows, training_date, full_retrain)
+    log["training"] = training
 
     pend = log.get("pending")
-    if not pend or pend["after_id"] != ids[-1] or events:
+    if full_retrain or not pend or pend["after_id"] != ids[-1] or events:
         Xn = build_features(np.vstack([M, np.zeros((1, n))]))[-1]
         p_next = model.predict(Xn)
         seed = int(ids[-1]) if ids[-1].isdigit() else N
@@ -136,4 +171,5 @@ def update(game, rows, n, sets_per_draw):
         }
     _write(lpath, log)
     return {"events": events, "first_run": first_run, "pending": log["pending"],
-            "stats": log["stats"], "latest": rows[-1], "model": model}
+            "stats": log["stats"], "latest": rows[-1], "history": log["history"],
+            "training": training, "model": model}
