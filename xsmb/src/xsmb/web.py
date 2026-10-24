@@ -54,25 +54,42 @@ def render():
             f"· cập nhật gần nhất: {training_status}"
             f" · {training['scored_draws']} kỳ được chấm, warm-up {training['warmup_draws']} kỳ</p>"
         )
-        for model_name, losses in training["expert_log_loss"].items():
+        brier_scores = training.get("expert_brier_score", {})
+        expert_weights = training.get("expert_weights", {})
+        for model_name, losses in training.get("expert_log_loss", {}).items():
             loss_text = " · ".join(
                 f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
                 for name, value in losses.items()
             )
-            brier = training["expert_brier_score"][model_name]
-            brier_text = " · ".join(
-                f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
-                for name, value in brier.items()
+            brier = brier_scores.get(model_name)
+            brier_text = (
+                " · ".join(
+                    f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
+                    for name, value in brier.items()
+                )
+                if brier
+                else "chưa có dữ liệu (sẽ cập nhật ở vòng huấn luyện kế tiếp)"
             )
-            weights = training["expert_weights"][model_name]
-            weight_text = " · ".join(
-                f"{html.escape(name)}: {value:.4f}" for name, value in weights.items()
+            weights = expert_weights.get(model_name)
+            weight_text = (
+                " · ".join(
+                    f"{html.escape(name)}: {value:.4f}"
+                    for name, value in weights.items()
+                )
+                if weights
+                else "chưa có dữ liệu"
             )
             o.append(
                 f"<p><b>{html.escape(model_name.title())}</b> — log-loss bình quân: "
                 f"{loss_text}<br>Brier: {brier_text}<br>Trọng số mô hình: {weight_text}</p>"
             )
-        for target, summary in training["backtest_metrics"].items():
+        backtest_metrics = training.get("backtest_metrics")
+        if not backtest_metrics:
+            o.append(
+                "<p class='note'>Báo cáo backtest chưa có trong dữ liệu huấn luyện đã lưu; "
+                "báo cáo sẽ được tạo ở vòng huấn luyện kế tiếp.</p>"
+            )
+        for target, summary in (backtest_metrics or {}).items():
             o.append(
                 f"<p><b>Backtest {html.escape(target.title())}</b> — "
                 f"{summary['draws']} kỳ cùng tập đánh giá.<br>"

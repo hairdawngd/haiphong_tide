@@ -16,4 +16,6 @@
   pre-outcome forecasts, common-set log-loss/Brier metrics, and leakage regression tests.
 - **XSMB Tracker 0.1.8**: add a causal Beta-Binomial/Dirichlet frequency benchmark
   and paired block-bootstrap intervals while retaining the existing production experts.
+- **XSMB Tracker 0.1.9**: render older saved training records that predate Brier and
+  backtest metrics without failing the Ingress page.
 - Keep each add-on's `config.yaml` version aligned with its Python package version.

@@ -255,3 +255,31 @@ def test_engine_keeps_production_training_separate_and_incremental(tmp_path, mon
         recorder.states["sensor.xsmb_training"]["attributes"]["backtest_metrics"]
         == second["training"]["backtest_metrics"]
     )
+
+
+def test_web_renders_legacy_training_log_without_brier_or_backtest(monkeypatch):
+    monkeypatch.setattr(
+        web.engine,
+        "load_log",
+        lambda: {
+            "stats": engine.empty_stats(),
+            "pending": None,
+            "history": [],
+            "training": {
+                "full_retrain_this_cycle": False,
+                "processed_draws": 101,
+                "first_draw": "2020-01-01",
+                "last_draw": "2020-04-10",
+                "last_full_retrain": "2026-10-24",
+                "scored_draws": 1,
+                "warmup_draws": 100,
+                "expert_log_loss": {"loto": {"base": 0.5}},
+            },
+        },
+    )
+
+    page = web.render()
+
+    assert "log-loss bình quân" in page
+    assert "chưa có dữ liệu (sẽ cập nhật ở vòng huấn luyện kế tiếp)" in page
+    assert "Báo cáo backtest chưa có trong dữ liệu huấn luyện đã lưu" in page
