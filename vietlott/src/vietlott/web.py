@@ -49,7 +49,55 @@ def _game_section(game):
             f"{html.escape(name)}: {value:.4f}"
             for name, value in training["expert_weights"].items()
         )
-        out.append(f"<p>Log-loss bình quân: {losses}<br>Trọng số mô hình: {weights}</p>")
+        brier = " · ".join(
+            f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
+            for name, value in training["expert_brier_score"].items()
+        )
+        out.append(
+            f"<p>Log-loss (nats, trung bình mỗi số): {losses}"
+            f"<br>Brier (trung bình mỗi số): {brier}"
+            f"<br>Trọng số mô hình: {weights}</p>"
+        )
+        summary = training["backtest_metrics"]
+        out.append(
+            f"<h3>Backtest walk-forward ({summary['draws']} kỳ, cùng tập đánh giá)</h3>"
+            f"<p>{html.escape(summary['log_loss_definition'])}<br>"
+            f"{html.escape(summary['brier_definition'])}<br>"
+            f"{html.escape(summary['top_six_definition'])}<br>"
+            f"{html.escape(summary['confidence_interval_definition'])}</p><table>"
+            "<tr><th>Mô hình</th><th>Log-loss</th><th>Chênh lệch log-loss so với base "
+            "(CI 95%)</th><th>Brier</th><th>Chênh lệch Brier so với base (CI 95%)</th>"
+            "<th>Trúng trong top 6 / kỳ</th></tr>"
+        )
+        for model_name, scores in summary["models"].items():
+            loss = scores["log_loss"]
+            brier_score = scores["brier_score"]
+            top_six = scores["top_six_hits_per_draw"]
+            loss_text = f"{loss:.6f}" if loss is not None else "n/a"
+            brier_text = f"{brier_score:.6f}" if brier_score is not None else "n/a"
+            top_six_text = f"{top_six:.3f}" if top_six is not None else "n/a"
+            log_delta = scores["log_loss_delta_vs_base"]
+            log_ci = scores["log_loss_delta_95_ci_vs_base"]
+            brier_delta = scores["brier_delta_vs_base"]
+            brier_ci = scores["brier_delta_95_ci_vs_base"]
+            log_delta_text = f"{log_delta:+.6f}" if log_delta is not None else "n/a"
+            brier_delta_text = (
+                f"{brier_delta:+.6f}" if brier_delta is not None else "n/a"
+            )
+            log_ci_text = (
+                f"[{log_ci[0]:+.6f}, {log_ci[1]:+.6f}]" if log_ci else "n/a"
+            )
+            brier_ci_text = (
+                f"[{brier_ci[0]:+.6f}, {brier_ci[1]:+.6f}]"
+                if brier_ci else "n/a"
+            )
+            out.append(
+                f"<tr><td>{html.escape(model_name)}</td>"
+                f"<td>{loss_text}</td><td>{log_delta_text} {log_ci_text}</td>"
+                f"<td>{brier_text}</td><td>{brier_delta_text} {brier_ci_text}</td>"
+                f"<td>{top_six_text}</td></tr>"
+            )
+        out.append("</table>")
     else:
         out.append("<p>Chưa có dữ liệu huấn luyện.</p>")
 
@@ -174,7 +222,7 @@ def start(games, port=8099, on_train=None):
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, *a):
+        def log_message(self, *_):
             pass
 
     srv = ThreadingHTTPServer(("0.0.0.0", port), Handler)

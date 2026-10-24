@@ -102,7 +102,9 @@ def publish_sensors(ha, res):
             "scored_draws": training["scored_draws"],
             "warmup_draws": training["warmup_draws"],
             "expert_log_loss": training["expert_log_loss"],
+            "expert_brier_score": training["expert_brier_score"],
             "expert_weights": training["expert_weights"],
+            "backtest_metrics": training["backtest_metrics"],
         }
     )
     history = res["history"]

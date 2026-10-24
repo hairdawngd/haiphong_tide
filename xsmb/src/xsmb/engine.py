@@ -7,9 +7,10 @@ from pathlib import Path
 
 import numpy as np
 
+from . import backtest
 from .data import N_NUMBERS, to_matrices
 from .features import build_features
-from .model import OnlineModel
+from .model import MODEL_VERSION, OnlineModel
 from .stats import P_LOTO, P_SPECIAL
 
 HISTORY_KEEP = 200
@@ -73,14 +74,19 @@ def _top(p, k):
     return sorted(int(i) for i in np.argsort(-p)[:k])
 
 
-def _training_info(models, rows, training_date, full_retrain):
+def _training_info(models, rows, training_date, full_retrain, backtest_result):
     experts = {}
+    brier_scores = {}
     weights = {}
     for prefix, model in models.items():
         scored = model.scored
         experts[prefix] = {
             name: round(loss / scored, 6) if scored else None
             for name, loss in model.cum.items()
+        }
+        brier_scores[prefix] = {
+            name: round(score / scored, 6) if scored else None
+            for name, score in model.cum_brier.items()
         }
         weights[prefix] = {
             name: round(float(weight), 6)
@@ -95,27 +101,46 @@ def _training_info(models, rows, training_date, full_retrain):
         "first_draw": rows[0]["date"],
         "last_draw": rows[-1]["date"],
         "expert_log_loss": experts,
+        "expert_brier_score": brier_scores,
         "expert_weights": weights,
+        "backtest_metrics": backtest_result["metrics"],
+        "backtest_database": backtest_result["database_path"],
     }
 
 
-def update(rows, loto_count, special_count, force_retrain=False):
+def update(rows, loto_count, special_count, force_retrain=False, warmup=100):
     h = home()
+    rows = backtest.ordered_rows(rows)
     N = len(rows)
     ids = [r["id"] for r in rows]
+    backtest_result = backtest.run_walk_forward(
+        rows,
+        h / f"backtest_v{MODEL_VERSION}.sqlite3",
+        loto_count=loto_count,
+        special_count=special_count,
+        warmup=warmup,
+    )
     lo_saved, sp_saved = _read(h / "loto_model.json", None), _read(h / "special_model.json", None)
-    first_run = lo_saved is None or sp_saved is None
+    first_run = (
+        lo_saved is None
+        or sp_saved is None
+        or lo_saved.get("model_version") != MODEL_VERSION
+        or sp_saved.get("model_version") != MODEL_VERSION
+    )
     training_date = date.today().isoformat()
     full_retrain = (
         force_retrain
         or first_run
         or lo_saved.get("trained_on") != training_date
         or sp_saved.get("trained_on") != training_date
+        or lo_saved.get("warmup") != warmup
+        or sp_saved.get("warmup") != warmup
         or lo_saved.get("processed", 0) > N
         or sp_saved.get("processed", 0) > N
     )
     if full_retrain:
-        m_lo, m_sp = OnlineModel(N_NUMBERS, P_LOTO), OnlineModel(N_NUMBERS, P_SPECIAL)
+        m_lo = OnlineModel(N_NUMBERS, P_LOTO, warmup=warmup)
+        m_sp = OnlineModel(N_NUMBERS, P_SPECIAL, categorical=True, warmup=warmup)
     else:
         m_lo, m_sp = OnlineModel.from_dict(lo_saved), OnlineModel.from_dict(sp_saved)
 
@@ -126,7 +151,11 @@ def update(rows, loto_count, special_count, force_retrain=False):
         return {"events": events, "first_run": first_run, "pending": log["pending"],
                 "stats": log["stats"], "latest": rows[-1], "history": log["history"],
                 "training": _training_info(
-                    {"loto": m_lo, "special": m_sp}, rows, training_date, full_retrain
+                    {"loto": m_lo, "special": m_sp},
+                    rows,
+                    training_date,
+                    full_retrain,
+                    backtest_result,
                 )}
 
     # Chỉ bỏ qua khi mô hình đã được học trong ngày và không có kỳ mới.
@@ -156,7 +185,11 @@ def update(rows, loto_count, special_count, force_retrain=False):
     _write(h / "loto_model.json", lo_data)
     _write(h / "special_model.json", sp_data)
     log["training"] = _training_info(
-        {"loto": m_lo, "special": m_sp}, rows, training_date, full_retrain
+        {"loto": m_lo, "special": m_sp},
+        rows,
+        training_date,
+        full_retrain,
+        backtest_result,
     )
 
     if full_retrain or not pend or pend["after_id"] != ids[-1] or events:

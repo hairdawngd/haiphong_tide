@@ -20,8 +20,42 @@ bộ khi có kỳ mới.
 3. Mỗi ngày một lần, mô hình được khởi tạo lại và học tuần tự toàn bộ lịch sử từ kỳ đầu
    đến kỳ mới nhất. Những lần kiểm tra tiếp theo trong ngày chỉ học thêm nếu có kỳ mới;
    việc học lại không làm mất hoặc chấm lặp lịch sử dự đoán.
-4. Mô hình: học trực tuyến (EWMA + SGD logistic + Hedge tổ hợp). Bộ 1 là top-6 theo
-   mô hình; các bộ còn lại lấy mẫu có trọng số theo xác suất mô hình.
+4. Các expert production hiện tại gồm uniform baseline, ba EWMA, SGD logistic và Hedge
+   tổ hợp online. Backtest cũng đánh giá thêm ứng viên Beta-Binomial; ứng viên này chưa
+   được đưa vào Hedge production. Bộ 1 là top-6 theo mô hình; các bộ còn lại lấy mẫu
+   có trọng số theo xác suất mô hình.
+
+### Backtest walk-forward
+
+Backtest lịch sử là quy trình riêng với mô hình production dùng tạo bộ số cho kỳ tới.
+Mỗi game sắp xếp kỳ quay theo thời gian tăng dần, dùng 100 kỳ đầu làm warm-up mặc định,
+rồi tạo xác suất riêng của `base`, `ewma_0.99`, `ewma_0.995`, `ewma_0.999`, `sgd`
+và `hedge` chỉ từ dữ liệu đã có trước kỳ đang dự đoán. Tất cả sáu dự đoán được lưu vào
+SQLite trước khi ghi kết quả thực; kết quả chỉ được dùng sau đó để cập nhật mô hình và
+trọng số Hedge cho kỳ tiếp theo.
+
+Dự đoán backtest, xác suất theo từng số, sáu số được chọn, thời gian dự đoán, hash dữ liệu
+tiền tố và cấu hình được lưu riêng trong `/data/<game>_backtest.sqlite3`. Khi có dữ liệu
+mới, chỉ kỳ chưa xử lý được thêm vào; thay đổi/sắp xếp lại phần lịch sử đã xử lý khiến
+backtest dừng với lỗi thay vì chấm lại dự đoán cũ. Dùng cơ sở dữ liệu mới nếu nhà cung cấp
+đính chính lịch sử và muốn thực hiện một đánh giá mới.
+
+Beta-Binomial dùng prior đối xứng có mean `6/n` và strength `n` (tương đương sáu pseudo-hit
+trên mỗi số miền số), rồi cập nhật số lần xuất hiện chỉ sau khi kết quả kỳ đó được mở.
+Điều này giữ tổng marginal probability bằng sáu, phù hợp số bóng chính được rút. Đây là
+ứng viên nghiên cứu; kết quả hiện không tự động thay mô hình production.
+
+Các mô hình được so sánh trên cùng tập kỳ. Log-loss là binary cross-entropy (nats), trung
+bình qua tất cả 45 hoặc 55 số trong mỗi kỳ rồi trung bình qua các kỳ. Brier cũng lấy trung
+bình bình phương sai số trên từng số rồi qua các kỳ. “Trúng trong top 6 / kỳ” là số số thật
+nằm trong sáu xác suất biên cao nhất; kỳ vọng chọn đều là `36/n` số mỗi kỳ. Đây là metric
+cho các xác suất biên, không phải đánh giá xác suất của cả tổ hợp vé. Báo cáo có chênh lệch
+log-loss/Brier so với uniform và paired circular moving-block bootstrap CI, hiệu chỉnh
+Bonferroni cho số model so sánh. Khoảng này chỉ mang tính thăm dò, không phải tập holdout
+cuối chưa từng dùng để lựa chọn.
+
+Điểm huấn luyện/backtest chỉ là chẩn đoán trên lịch sử, không chứng minh có thể dự đoán
+kết quả tương lai hay tăng cơ hội trúng.
 
 ## Cài đặt (add-on cục bộ)
 
@@ -55,14 +89,16 @@ Muốn nhận thông báo đẩy trên điện thoại, điền tên dịch vụ
 - `sensor.vietlott_power655_scoreboard`: số lần trúng thưởng; thuộc tính `win_rate_pct`,
   `expected_win_rate_pct`, `tiers`, `fixed_prize_total_vnd`, `ticket_cost_vnd`
 - `sensor.vietlott_power655_training`: số kỳ đã học; thuộc tính `last_full_retrain`,
-  `training_from`, `training_through`, `scored_draws`, `expert_log_loss` và `expert_weights`
+  `training_from`, `training_through`, `scored_draws`, `expert_log_loss`,
+  `expert_brier_score`, `expert_weights` và `backtest_metrics`
 - `sensor.vietlott_power655_yesterday_prediction`: chi tiết các bộ đã dự đoán và kết quả
   đối chiếu của kỳ gần nhất; `is_yesterday` cho biết kỳ đó có đúng ngày hôm qua hay không
 - Trang Ingress cũng hiển thị trạng thái/metric huấn luyện và chi tiết đối chiếu dự đoán
   gần nhất. Nút **Huấn luyện lại toàn bộ** sẽ xếp hàng train lại tất cả game đang bật.
 
-Các sensor tương ứng cũng được tạo cho `mega645`. Điểm log-loss chỉ tính trên phần kỳ
-được chấm sau giai đoạn khởi động (`warmup_draws`).
+Các sensor tương ứng cũng được tạo cho `mega645`. `expert_log_loss` và
+`expert_brier_score` là trung bình theo từng số (45/55 số mỗi kỳ), chỉ tính sau warm-up.
+Backtest cũng chỉ chấm các kỳ sau 100 kỳ warm-up lịch sử.
 
 Các thực thể được tạo qua API trạng thái nên sẽ biến mất khi Home Assistant khởi động lại,
 và add-on tạo lại chúng ở lần kiểm tra kế tiếp (tối đa `poll_minutes` phút).
@@ -105,8 +141,9 @@ Giá vé tính 10.000đ/bộ.
 
 ## Dữ liệu và riêng tư
 
-Trạng thái mô hình và nhật ký dự đoán lưu trong `/data` của add-on (được sao lưu cùng
-add-on). Add-on chỉ gọi ra ngoài tới `raw.githubusercontent.com` để lấy dữ liệu kết quả.
+Trạng thái mô hình, nhật ký dự đoán và cơ sở dữ liệu backtest lưu trong `/data` của add-on
+(được sao lưu cùng add-on). Add-on chỉ gọi ra ngoài tới `raw.githubusercontent.com` để lấy
+dữ liệu kết quả.
 
 ## Lưu ý vận hành
 

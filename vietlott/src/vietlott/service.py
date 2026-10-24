@@ -1,7 +1,6 @@
 """Dịch vụ chạy nền của add-on: định kỳ lấy dữ liệu, học, chấm điểm, thông báo."""
 import json
 import logging
-import math
 import os
 import signal
 import threading
@@ -88,7 +87,9 @@ def publish_sensors(ha, game, res):
             "warmup_draws": training["warmup_draws"],
             "top_six_hits": training["top_six_hits"],
             "expert_log_loss": training["expert_log_loss"],
+            "expert_brier_score": training["expert_brier_score"],
             "expert_weights": training["expert_weights"],
+            "backtest_metrics": training["backtest_metrics"],
         }
     )
     history = res["history"]

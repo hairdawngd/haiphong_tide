@@ -28,9 +28,40 @@ Có hai mục tiêu, mỗi mục một mô hình học trực tuyến (EWMA + SG
 Mỗi kỳ add-on chọn `loto_per_draw` số loto và `special_per_draw` số cho giải ĐB có xác suất
 mô hình cao nhất. Thực tế các xác suất này chỉ chênh vài phần nghìn so với mức nền.
 
-Mỗi ngày một lần, cả hai mô hình được khởi tạo lại và học tuần tự từ kỳ lịch sử đầu tiên
-đến kỳ mới nhất. Trong cùng ngày, các chu kỳ kiểm tra tiếp theo chỉ học phần kỳ mới (nếu
-có); quá trình học lại không xóa hay chấm lặp lịch sử dự đoán.
+Mỗi ngày một lần, mô hình dùng để tạo dự đoán kỳ tới được khởi tạo lại và học tuần tự
+từ kỳ lịch sử đầu tiên đến kỳ mới nhất. Trong cùng ngày, các chu kỳ kiểm tra tiếp theo
+chỉ học phần kỳ mới (nếu có). Luồng này được tách khỏi backtest walk-forward bên dưới;
+train lại mô hình dự đoán không xóa hay chấm lại các dự đoán backtest đã lưu.
+
+## Backtest walk-forward
+
+Backtest sắp xếp toàn bộ lịch sử theo ngày tăng dần, dùng 100 kỳ đầu làm warm-up mặc định,
+rồi đánh giá các kỳ còn lại theo thứ tự. Với mỗi kỳ được đánh giá, feature và xác suất của
+cả sáu mô hình được tạo chỉ từ các kỳ trước đó. Tất cả dự đoán được ghi vào
+`/data/backtest.sqlite3` **trước khi** kết quả kỳ hiện tại được ghi nhận; sau đó kết quả mới
+được dùng để cập nhật mô hình và trọng số Hedge cho kỳ kế tiếp.
+
+Backtest chạy độc lập với mô hình production dùng để dự đoán kỳ tới. Khi có dữ liệu mới,
+chỉ các kỳ chưa xử lý được thêm vào SQLite; kết quả cũ không bị chấm lại bằng mô hình đã học
+trên dữ liệu mới. Nếu phần lịch sử đã xử lý bị thay đổi hoặc sắp xếp lại, add-on từ chối chạy
+tiếp để tránh âm thầm đánh giá lại các dự đoán cũ. Hãy giữ nguyên bản sao cơ sở dữ liệu
+backtest khi xử lý trường hợp nhà cung cấp đính chính lịch sử.
+
+Các mô hình được so sánh trên cùng tập kỳ: `base`, ứng viên Bayes
+`beta_binomial`, `ewma_0.99`, `ewma_0.995`, `ewma_0.999`, `sgd` và `hedge`.
+Ứng viên Bayes dùng prior Beta có mean là xác suất nền và strength 100 cho loto;
+với giải ĐB, dùng prior Dirichlet đối xứng có một pseudo-count cho mỗi số. Đây chỉ
+là benchmark, không được đưa vào Hedge production. Log-loss được báo theo nats:
+
+- **Loto**: binary cross-entropy, lấy trung bình qua 100 số mỗi kỳ rồi trung bình qua các kỳ.
+- **Giải ĐB**: categorical cross-entropy, tổng qua 100 số mỗi kỳ rồi trung bình qua các kỳ.
+- **Brier**: bình phương sai số trung bình qua 100 số cho loto; tổng multiclass qua 100 lớp
+  cho giải ĐB, rồi trung bình qua các kỳ. Xác suất giải ĐB được chuẩn hóa thành tổng bằng 1.
+
+Đây là đánh giá ngoài mẫu tuần tự trên lịch sử, không phải bằng chứng rằng xổ số công bằng
+có thể dự đoán được. Báo cáo thêm chênh lệch log-loss/Brier so với `base` và paired
+circular moving-block bootstrap CI (1.000 mẫu, độ dài khối căn bậc hai số kỳ, Bonferroni
+cho sáu model so sánh). CI mang tính thăm dò, không thay cho holdout cuối chưa dùng để chọn.
 
 ## Cài đặt
 
@@ -60,7 +91,8 @@ Cổng Ingress được khai báo tại `ingress_port` trong `config.yaml`; serv
 - `sensor.xsmb_prediction`: các số dự đoán cho kỳ tới
 - `sensor.xsmb_scoreboard`: số lần loto trúng; thuộc tính tỉ lệ thực tế, tỉ lệ lý thuyết và `*_p_value`
 - `sensor.xsmb_training`: số kỳ đã học; thuộc tính ngày học lại gần nhất, khoảng lịch sử,
-  số kỳ warm-up, log-loss và trọng số của các chuyên gia cho cả mô hình loto và giải ĐB
+  số kỳ warm-up, log-loss/Brier và trọng số chuyên gia; `backtest_metrics` chứa điểm walk-forward
+  của các expert và benchmark Bayes trên cùng tập kỳ
 - `sensor.xsmb_yesterday_prediction`: chi tiết từng số loto/ĐB đã dự đoán và kết quả thực
   tế của kỳ gần nhất; `is_yesterday` cho biết kỳ đó có đúng ngày hôm qua hay không
 - Sự kiện `xsmb_new_result`: `date`, `special`, `first`, `special_two_digits`, `loto_hits`,
@@ -86,4 +118,5 @@ càng dễ gặp một chỉ số "đẹp" chỉ do tình cờ.
   hợp lệ khi ghi trước kỳ đó.
 - Thông báo trong Home Assistant dùng mã cố định nên thông báo mới thay thế thông báo cũ; lịch
   sử đầy đủ có ở trang XSMB trên thanh bên và ở `notify_service`.
-- Dữ liệu và trạng thái mô hình lưu trong `/data` của add-on, được sao lưu cùng add-on.
+- Dữ liệu, trạng thái mô hình và dự đoán backtest lưu trong `/data` của add-on, được sao lưu
+  cùng add-on.

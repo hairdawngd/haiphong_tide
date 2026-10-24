@@ -59,14 +59,55 @@ def render():
                 f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
                 for name, value in losses.items()
             )
+            brier = training["expert_brier_score"][model_name]
+            brier_text = " · ".join(
+                f"{html.escape(name)}: {value if value is not None else 'chưa có'}"
+                for name, value in brier.items()
+            )
             weights = training["expert_weights"][model_name]
             weight_text = " · ".join(
                 f"{html.escape(name)}: {value:.4f}" for name, value in weights.items()
             )
             o.append(
                 f"<p><b>{html.escape(model_name.title())}</b> — log-loss bình quân: "
-                f"{loss_text}<br>Trọng số mô hình: {weight_text}</p>"
+                f"{loss_text}<br>Brier: {brier_text}<br>Trọng số mô hình: {weight_text}</p>"
             )
+        for target, summary in training["backtest_metrics"].items():
+            o.append(
+                f"<p><b>Backtest {html.escape(target.title())}</b> — "
+                f"{summary['draws']} kỳ cùng tập đánh giá.<br>"
+                f"{html.escape(summary['log_loss_definition'])}<br>"
+                f"{html.escape(summary['brier_definition'])}<br>"
+                f"{html.escape(summary['confidence_interval_definition'])}</p><ul>"
+            )
+            for model_name, scores in summary["models"].items():
+                log_loss = scores["log_loss"]
+                brier = scores["brier_score"]
+                log_loss_text = f"{log_loss:.6f}" if log_loss is not None else "n/a"
+                brier_text = f"{brier:.6f}" if brier is not None else "n/a"
+                log_delta = scores["log_loss_delta_vs_base"]
+                log_ci = scores["log_loss_delta_95_ci_vs_base"]
+                brier_delta = scores["brier_delta_vs_base"]
+                brier_ci = scores["brier_delta_95_ci_vs_base"]
+                log_delta_text = f"{log_delta:+.6f}" if log_delta is not None else "n/a"
+                brier_delta_text = (
+                    f"{brier_delta:+.6f}" if brier_delta is not None else "n/a"
+                )
+                log_ci_text = (
+                    f"[{log_ci[0]:+.6f}, {log_ci[1]:+.6f}]"
+                    if log_ci else "n/a"
+                )
+                brier_ci_text = (
+                    f"[{brier_ci[0]:+.6f}, {brier_ci[1]:+.6f}]"
+                    if brier_ci else "n/a"
+                )
+                o.append(
+                    f"<li>{html.escape(model_name)}: log-loss "
+                    f"{log_loss_text} (Δ {log_delta_text}, CI {log_ci_text}) · "
+                    f"Brier {brier_text} (Δ {brier_delta_text}, CI {brier_ci_text})"
+                    "</li>"
+                )
+            o.append("</ul>")
     else:
         o.append("<p>Chưa có dữ liệu huấn luyện.</p>")
 

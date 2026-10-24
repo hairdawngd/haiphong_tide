@@ -33,8 +33,10 @@ jobs:
 
     - name: Lint Haiphong Tide add-on
       run: |
-        flake8 haiphong_tide haiphong_tide/tests vietlott/src/vietlott xsmb/src/xsmb --count --select=E9,F63,F7,F82 --show-source --statistics
-        flake8 haiphong_tide haiphong_tide/tests vietlott/src/vietlott xsmb/src/xsmb --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        flake8 haiphong_tide haiphong_tide/tests vietlott/src/vietlott vietlott/tests xsmb/src/xsmb xsmb/tests --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 haiphong_tide haiphong_tide/tests vietlott/src/vietlott vietlott/tests xsmb/src/xsmb xsmb/tests --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
 
     - name: Run tests
-      run: pytest haiphong_tide/tests -v
+      env:
+        PYTHONPATH: xsmb/src:vietlott/src
+      run: pytest haiphong_tide/tests vietlott/tests xsmb/tests -v

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import numpy as np
 
-from . import prizes
+from . import backtest, prizes
 from .data import K, to_matrix
 from .features import build_features
-from .online import OnlineModel
+from .online import MODEL_VERSION, OnlineModel
 
 HISTORY_KEEP = 200
 
@@ -92,7 +92,7 @@ def make_sets(p_next, count, seed):
     return sets
 
 
-def _training_info(model, rows, training_date, full_retrain):
+def _training_info(model, rows, training_date, full_retrain, backtest_result):
     scored = model.scored
     return {
         "last_full_retrain": training_date,
@@ -106,19 +106,32 @@ def _training_info(model, rows, training_date, full_retrain):
             name: round(loss / scored, 6) if scored else None
             for name, loss in model.cum.items()
         },
+        "expert_brier_score": {
+            name: round(score / scored, 6) if scored else None
+            for name, score in model.cum_brier.items()
+        },
         "expert_weights": {
             name: round(float(weight), 6)
             for name, weight in zip(model.names, model.weights())
         },
         "top_six_hits": model.hits,
+        "backtest_metrics": backtest_result["metrics"],
+        "backtest_database": backtest_result["database_path"],
     }
 
 
 def update(game, rows, n, sets_per_draw, force_retrain=False):
     """Học kỳ mới -> chấm điểm dự đoán cũ -> tạo dự đoán mới. Trả về dict kết quả."""
     mpath, lpath = _paths(game)
+    rows = backtest.ordered_rows(rows)
     N = len(rows)
     ids = [r["id"] for r in rows]
+    backtest_result = backtest.run_walk_forward(
+        rows,
+        game,
+        n,
+        home() / f"{game}_backtest_v{MODEL_VERSION}.sqlite3",
+    )
     M = to_matrix(rows, n)
     X = build_features(M)
 
@@ -127,6 +140,7 @@ def update(game, rows, n, sets_per_draw, force_retrain=False):
     full_retrain = (
         force_retrain
         or saved is None
+        or saved.get("model_version") != MODEL_VERSION
         or saved.get("trained_on") != training_date
         or saved.get("n") != n
         or saved.get("processed", 0) > N
@@ -154,7 +168,9 @@ def update(game, rows, n, sets_per_draw, force_retrain=False):
     model_data = model.to_dict()
     model_data["trained_on"] = training_date
     _write(mpath, model_data)
-    training = _training_info(model, rows, training_date, full_retrain)
+    training = _training_info(
+        model, rows, training_date, full_retrain, backtest_result
+    )
     log["training"] = training
 
     pend = log.get("pending")

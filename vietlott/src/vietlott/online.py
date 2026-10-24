@@ -13,11 +13,16 @@ EPS = 1e-6
 DECAYS = (0.99, 0.995, 0.999)
 START = 100
 LR, L2, ETA = 0.002, 1e-2, 0.5
+MODEL_VERSION = 4
 
 
 def _logloss(p, y):
     p = np.clip(p, EPS, 1 - EPS)
-    return float(-(y * np.log(p) + (1 - y) * np.log(1 - p)).sum())
+    return float(-(y * np.log(p) + (1 - y) * np.log1p(-p)).mean())
+
+
+def _brier_score(p, y):
+    return float(((p - y) ** 2).mean())
 
 
 def _sigmoid(z):
@@ -32,11 +37,13 @@ class OnlineModel:
         self.base = K / n
         self.names = ["base"] + [f"ewma_{d}" for d in DECAYS] + ["sgd"]
         self.ewma = {d: np.full(n, self.base) for d in DECAYS}
+        self.counts = np.zeros(n, dtype=np.float64)
         self.w = np.zeros(self.F)
         self.b = math.log(self.base / (1 - self.base))
         self.logw = np.zeros(len(self.names))
         self.s1, self.s2, self.cnt = np.zeros(self.F), np.zeros(self.F), 0
         self.cum = {nm: 0.0 for nm in self.names + ["hedge"]}
+        self.cum_brier = {nm: 0.0 for nm in self.names + ["hedge"]}
         self.hits, self.scored, self.processed = 0, 0, 0
 
     def _norm(self):
@@ -57,46 +64,85 @@ class OnlineModel:
         w = np.exp(self.logw - self.logw.max())
         return w / w.sum()
 
-    def predict(self, Xt):
+    def forecast(self, Xt):
         preds, _ = self.experts(Xt)
-        return np.clip(sum(wi * pi for wi, pi in zip(self.weights(), preds)), EPS, 1 - EPS)
+        forecasts = dict(zip(self.names, [
+            np.clip(pred, EPS, 1 - EPS) for pred in preds
+        ]))
+        forecasts["beta_binomial"] = np.clip(
+            (self.counts + self.base * self.n) / (self.n + self.processed),
+            EPS,
+            1 - EPS,
+        )
+        forecasts["hedge"] = np.clip(
+            sum(wi * pi for wi, pi in zip(self.weights(), preds)), EPS, 1 - EPS
+        )
+        return forecasts
 
-    def step(self, Xt, y):
-        """Học 1 kỳ: chấm điểm trước, cập nhật sau."""
-        preds, Z = self.experts(Xt)
-        p_mix = np.clip(sum(wi * pi for wi, pi in zip(self.weights(), preds)), EPS, 1 - EPS)
+    def predict(self, Xt):
+        return self.forecast(Xt)["hedge"]
+
+    def observe(self, Xt, y, forecasts):
+        """Score an already issued forecast, then update experts and Hedge weights."""
+        y = np.asarray(y, dtype=np.float64)
+        if y.shape != (self.n,):
+            raise ValueError(f"Expected label shape {(self.n,)}, got {y.shape}")
+        _, Z = self.experts(Xt)
+        losses = {
+            name: _logloss(forecasts[name], y)
+            for name in self.names
+        }
+        hedge_loss = _logloss(forecasts["hedge"], y)
         if self.processed >= START:
-            for nm, pr in zip(self.names, preds):
-                self.cum[nm] += _logloss(pr, y)
-            self.cum["hedge"] += _logloss(p_mix, y)
-            self.hits += int(y[np.argsort(-p_mix)[:K]].sum())
+            for name in self.names:
+                self.cum[name] += losses[name]
+                self.cum_brier[name] += _brier_score(forecasts[name], y)
+            self.cum["hedge"] += hedge_loss
+            self.cum_brier["hedge"] += _brier_score(forecasts["hedge"], y)
+            self.hits += int(y[np.argsort(-forecasts["hedge"])[:K]].sum())
             self.scored += 1
-        for i, pr in enumerate(preds):
-            self.logw[i] -= ETA * _logloss(pr, y) / self.n
+        for i, name in enumerate(self.names):
+            self.logw[i] -= ETA * losses[name]
         for d in DECAYS:
             self.ewma[d] = d * self.ewma[d] + (1 - d) * y
+        self.counts += y
         if self.cnt >= 50:
             g = _sigmoid(Z @ self.w + self.b) - y
             self.w -= LR * (Z.T @ g / self.n + L2 * self.w)
             self.b -= LR * g.mean()
-        self.s1 += Xt.mean(0); self.s2 += (Xt ** 2).mean(0); self.cnt += 1
+        self.s1 += Xt.mean(0)
+        self.s2 += (Xt ** 2).mean(0)
+        self.cnt += 1
         self.processed += 1
+
+    def step(self, Xt, y):
+        """Compatibility helper: forecast before observing the draw."""
+        forecasts = self.forecast(Xt)
+        self.observe(Xt, y, forecasts)
+        return forecasts
 
     def to_dict(self):
         return {
+            "model_version": MODEL_VERSION,
             "n": self.n, "ewma": {str(d): v.tolist() for d, v in self.ewma.items()},
+            "counts": self.counts.tolist(),
             "w": self.w.tolist(), "b": self.b, "logw": self.logw.tolist(),
             "s1": self.s1.tolist(), "s2": self.s2.tolist(), "cnt": self.cnt,
-            "cum": self.cum, "hits": self.hits, "scored": self.scored,
+            "cum": self.cum, "cum_brier": self.cum_brier,
+            "hits": self.hits, "scored": self.scored,
             "processed": self.processed,
         }
 
     @classmethod
     def from_dict(cls, d):
+        if d.get("model_version") != MODEL_VERSION:
+            raise ValueError("Unsupported serialized model version")
         m = cls(d["n"])
         m.ewma = {float(k): np.array(v) for k, v in d["ewma"].items()}
+        m.counts = np.array(d["counts"], dtype=np.float64)
         m.w, m.b = np.array(d["w"]), d["b"]
         m.logw = np.array(d["logw"])
         m.s1, m.s2, m.cnt = np.array(d["s1"]), np.array(d["s2"]), d["cnt"]
-        m.cum, m.hits, m.scored, m.processed = d["cum"], d["hits"], d["scored"], d["processed"]
+        m.cum, m.cum_brier = d["cum"], d["cum_brier"]
+        m.hits, m.scored, m.processed = d["hits"], d["scored"], d["processed"]
         return m
